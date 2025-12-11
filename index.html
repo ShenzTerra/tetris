@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tetris Game</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    const COLS = 10;
+    const ROWS = 20;
+    const BLOCK_SIZE = 30;
+
+    const SHAPES = {
+      I: [[1,1,1,1]],
+      O: [[1,1],[1,1]],
+      T: [[0,1,0],[1,1,1]],
+      S: [[0,1,1],[1,1,0]],
+      Z: [[1,1,0],[0,1,1]],
+      J: [[1,0,0],[1,1,1]],
+      L: [[0,0,1],[1,1,1]]
+    };
+
+    const COLORS = {
+      I: '#00f0f0',
+      O: '#f0f000',
+      T: '#a000f0',
+      S: '#00f000',
+      Z: '#f00000',
+      J: '#0000f0',
+      L: '#f0a000'
+    };
+
+    // Lucide React icons as SVG components
+    const Play = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+      </svg>
+    );
+
+    const Pause = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="6" y="4" width="4" height="16"></rect>
+        <rect x="14" y="4" width="4" height="16"></rect>
+      </svg>
+    );
+
+    const RotateCw = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+      </svg>
+    );
+
+    const ArrowLeft = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="19" y1="12" x2="5" y2="12"></line>
+        <polyline points="12 19 5 12 12 5"></polyline>
+      </svg>
+    );
+
+    const ArrowRight = () => (
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+        <polyline points="12 5 19 12 12 19"></polyline>
+      </svg>
+    );
+
+    const ArrowDown = () => (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <polyline points="19 12 12 19 5 12"></polyline>
+      </svg>
+    );
+
+    const TetrisGame = () => {
+      const [board, setBoard] = useState(Array(ROWS).fill().map(() => Array(COLS).fill(0)));
+      const [currentPiece, setCurrentPiece] = useState(null);
+      const [position, setPosition] = useState({ x: 0, y: 0 });
+      const [score, setScore] = useState(0);
+      const [gameOver, setGameOver] = useState(false);
+      const [paused, setPaused] = useState(false);
+      const [gameStarted, setGameStarted] = useState(false);
+      const [level, setLevel] = useState(1);
+      const [clearingLines, setClearingLines] = useState([]);
+
+      const createPiece = useCallback(() => {
+        const shapes = Object.keys(SHAPES);
+        const randomShape = shapes[Math.floor(Math.random() * shapes.length)];
+        return {
+          shape: SHAPES[randomShape],
+          color: COLORS[randomShape]
+        };
+      }, []);
+
+      const checkCollision = useCallback((piece, pos, boardState) => {
+        for (let y = 0; y < piece.shape.length; y++) {
+          for (let x = 0; x < piece.shape[y].length; x++) {
+            if (piece.shape[y][x]) {
+              const newX = pos.x + x;
+              const newY = pos.y + y;
+              if (newX < 0 || newX >= COLS || newY >= ROWS) return true;
+              if (newY >= 0 && boardState[newY][newX]) return true;
+            }
+          }
+        }
+        return false;
+      }, []);
+
+      const mergePiece = useCallback(() => {
+        const newBoard = board.map(row => [...row]);
+        currentPiece.shape.forEach((row, y) => {
+          row.forEach((cell, x) => {
+            if (cell) {
+              const boardY = position.y + y;
+              const boardX = position.x + x;
+              if (boardY >= 0) {
+                newBoard[boardY][boardX] = currentPiece.color;
+              }
+            }
+          });
+        });
+        return newBoard;
+      }, [board, currentPiece, position]);
+
+      const clearLines = useCallback((boardState) => {
+        const linesToClear = [];
+        boardState.forEach((row, index) => {
+          if (row.every(cell => cell !== 0)) {
+            linesToClear.push(index);
+          }
+        });
+        
+        if (linesToClear.length > 0) {
+          setClearingLines(linesToClear);
+          
+          setTimeout(() => {
+            const newBoard = boardState.filter((row, index) => !linesToClear.includes(index));
+            
+            while (newBoard.length < ROWS) {
+              newBoard.unshift(Array(COLS).fill(0));
+            }
+            
+            const newScore = score + linesToClear.length * 100;
+            const newLevel = Math.floor(newScore / 500) + 1;
+            setLevel(newLevel);
+            setBoard(newBoard);
+            setClearingLines([]);
+          }, 400);
+          
+          return { newBoard: boardState, linesCleared: linesToClear.length };
+        }
+        
+        return { newBoard: boardState, linesCleared: 0 };
+      }, [score]);
+
+      const rotatePiece = useCallback(() => {
+        if (!currentPiece || paused || gameOver) return;
+        
+        const rotated = currentPiece.shape[0].map((_, i) =>
+          currentPiece.shape.map(row => row[i]).reverse()
+        );
+        
+        const rotatedPiece = { ...currentPiece, shape: rotated };
+        
+        if (!checkCollision(rotatedPiece, position, board)) {
+          setCurrentPiece(rotatedPiece);
+        }
+      }, [currentPiece, position, board, checkCollision, paused, gameOver]);
+
+      const moveLeft = useCallback(() => {
+        if (!currentPiece || paused || gameOver) return;
+        const newPos = { ...position, x: position.x - 1 };
+        if (!checkCollision(currentPiece, newPos, board)) {
+          setPosition(newPos);
+        }
+      }, [currentPiece, position, board, checkCollision, paused, gameOver]);
+
+      const moveRight = useCallback(() => {
+        if (!currentPiece || paused || gameOver) return;
+        const newPos = { ...position, x: position.x + 1 };
+        if (!checkCollision(currentPiece, newPos, board)) {
+          setPosition(newPos);
+        }
+      }, [currentPiece, position, board, checkCollision, paused, gameOver]);
+
+      const moveDown = useCallback(() => {
+        if (!currentPiece || paused || gameOver || clearingLines.length > 0) return;
+        const newPos = { ...position, y: position.y + 1 };
+        
+        if (!checkCollision(currentPiece, newPos, board)) {
+          setPosition(newPos);
+        } else {
+          const mergedBoard = mergePiece();
+          const { newBoard, linesCleared } = clearLines(mergedBoard);
+          
+          if (linesCleared === 0) {
+            setBoard(newBoard);
+            const newPiece = createPiece();
+            const startPos = { x: Math.floor(COLS / 2) - 1, y: 0 };
+            
+            if (checkCollision(newPiece, startPos, newBoard)) {
+              setGameOver(true);
+            } else {
+              setCurrentPiece(newPiece);
+              setPosition(startPos);
+            }
+          } else {
+            setTimeout(() => {
+              const newPiece = createPiece();
+              const startPos = { x: Math.floor(COLS / 2) - 1, y: 0 };
+              
+              if (checkCollision(newPiece, startPos, board)) {
+                setGameOver(true);
+              } else {
+                setCurrentPiece(newPiece);
+                setPosition(startPos);
+              }
+            }, 450);
+          }
+          
+          setScore(prev => prev + linesCleared * 100);
+        }
+      }, [currentPiece, position, board, checkCollision, mergePiece, clearLines, createPiece, paused, gameOver, clearingLines]);
+
+      const hardDrop = useCallback(() => {
+        if (!currentPiece || paused || gameOver) return;
+        let newPos = { ...position };
+        while (!checkCollision(currentPiece, { ...newPos, y: newPos.y + 1 }, board)) {
+          newPos.y++;
+        }
+        setPosition(newPos);
+        setTimeout(moveDown, 50);
+      }, [currentPiece, position, board, checkCollision, moveDown, paused, gameOver]);
+
+      const startGame = () => {
+        setBoard(Array(ROWS).fill().map(() => Array(COLS).fill(0)));
+        const newPiece = createPiece();
+        setCurrentPiece(newPiece);
+        setPosition({ x: Math.floor(COLS / 2) - 1, y: 0 });
+        setScore(0);
+        setLevel(1);
+        setGameOver(false);
+        setPaused(false);
+        setGameStarted(true);
+      };
+
+      useEffect(() => {
+        if (!gameStarted || paused || gameOver) return;
+        
+        const speed = Math.max(200, 800 - (level - 1) * 80);
+        const interval = setInterval(moveDown, speed);
+        return () => clearInterval(interval);
+      }, [moveDown, paused, gameOver, gameStarted, level]);
+
+      useEffect(() => {
+        const handleKeyPress = (e) => {
+          if (!gameStarted || gameOver) return;
+          
+          switch(e.key) {
+            case 'ArrowLeft': moveLeft(); break;
+            case 'ArrowRight': moveRight(); break;
+            case 'ArrowDown': moveDown(); break;
+            case 'ArrowUp': rotatePiece(); break;
+            case ' ': e.preventDefault(); hardDrop(); break;
+            case 'p': setPaused(p => !p); break;
+          }
+        };
+        
+        window.addEventListener('keydown', handleKeyPress);
+        return () => window.removeEventListener('keydown', handleKeyPress);
+      }, [moveLeft, moveRight, moveDown, rotatePiece, hardDrop, gameStarted, gameOver]);
+
+      const renderBoard = () => {
+        const displayBoard = board.map(row => [...row]);
+        
+        if (currentPiece) {
+          currentPiece.shape.forEach((row, y) => {
+            row.forEach((cell, x) => {
+              if (cell) {
+                const boardY = position.y + y;
+                const boardX = position.x + x;
+                if (boardY >= 0 && boardY < ROWS && boardX >= 0 && boardX < COLS) {
+                  displayBoard[boardY][boardX] = currentPiece.color;
+                }
+              }
+            });
+          });
+        }
+        
+        return displayBoard;
+      };
+
+      const displayBoard = renderBoard();
+
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-2 sm:p-4">
+          <div className="bg-gray-900 rounded-lg shadow-2xl p-3 sm:p-6 w-full max-w-md">
+            <h1 className="text-3xl sm:text-4xl font-bold text-center mb-3 sm:mb-4 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">
+              TETRIS
+            </h1>
+            
+            <div className="flex justify-between items-center mb-3 sm:mb-4">
+              <div className="text-white">
+                <div className="text-lg sm:text-xl">Score: {score}</div>
+                <div className="text-sm sm:text-base text-gray-400">Level: {level}</div>
+              </div>
+              {gameStarted && !gameOver && (
+                <button
+                  onClick={() => setPaused(!paused)}
+                  className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 p-2 rounded"
+                >
+                  {paused ? <Play /> : <Pause />}
+                </button>
+              )}
+            </div>
+
+            <div className="mb-3 sm:mb-4 bg-black rounded overflow-hidden mx-auto" style={{ width: COLS * BLOCK_SIZE, height: ROWS * BLOCK_SIZE }}>
+              {displayBoard.map((row, y) => {
+                const isClearing = clearingLines.includes(y);
+                return (
+                  <div key={y} className="flex">
+                    {row.map((cell, x) => (
+                      <div
+                        key={`${y}-${x}`}
+                        className={`border border-gray-800 transition-all duration-300 ${
+                          isClearing ? 'animate-pulse scale-110 opacity-0' : ''
+                        }`}
+                        style={{
+                          width: BLOCK_SIZE,
+                          height: BLOCK_SIZE,
+                          backgroundColor: isClearing ? '#fff' : (cell || '#111'),
+                          boxShadow: isClearing ? '0 0 20px #fff, 0 0 40px #fff, 0 0 60px #fff' : 'none',
+                        }}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+
+            {gameOver && (
+              <div className="text-center mb-4">
+                <div className="text-red-500 text-xl sm:text-2xl font-bold mb-2">Game Over!</div>
+                <div className="text-white text-lg sm:text-xl">Final Score: {score}</div>
+                <div className="text-gray-400 text-sm sm:text-base">Level Reached: {level}</div>
+              </div>
+            )}
+
+            {!gameStarted || gameOver ? (
+              <button
+                onClick={startGame}
+                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded text-lg sm:text-xl mb-3 sm:mb-4"
+              >
+                {gameOver ? 'Play Again' : 'Start Game'}
+              </button>
+            ) : null}
+
+            <div className="grid grid-cols-3 gap-2 mb-3 sm:mb-4">
+              <button
+                onTouchStart={moveLeft}
+                onClick={moveLeft}
+                className="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white p-3 sm:p-4 rounded flex items-center justify-center touch-manipulation"
+              >
+                <ArrowLeft />
+              </button>
+              <button
+                onTouchStart={rotatePiece}
+                onClick={rotatePiece}
+                className="bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white p-3 sm:p-4 rounded flex items-center justify-center touch-manipulation"
+              >
+                <RotateCw />
+              </button>
+              <button
+                onTouchStart={moveRight}
+                onClick={moveRight}
+                className="bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white p-3 sm:p-4 rounded flex items-center justify-center touch-manipulation"
+              >
+                <ArrowRight />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onTouchStart={moveDown}
+                onClick={moveDown}
+                className="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white p-3 sm:p-4 rounded flex items-center justify-center text-sm sm:text-base touch-manipulation"
+              >
+                <ArrowDown /> <span className="ml-1">Soft Drop</span>
+              </button>
+              <button
+                onTouchStart={hardDrop}
+                onClick={hardDrop}
+                className="bg-red-500 hover:bg-red-600 active:bg-red-700 text-white p-3 sm:p-4 rounded flex items-center justify-center text-sm sm:text-base touch-manipulation"
+              >
+                <ArrowDown /> <span className="ml-1">Hard Drop</span>
+              </button>
+            </div>
+
+            <div className="text-gray-400 text-xs sm:text-sm mt-3 sm:mt-4 text-center">
+              <div className="mb-2">Desktop: Arrow keys to move, ↑ to rotate, Space for hard drop</div>
+              <div>Mobile: Use touch buttons • Speed increases every 500 points</div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<TetrisGame />, document.getElementById('root'));
+  </script>
+</body>
+</html>
